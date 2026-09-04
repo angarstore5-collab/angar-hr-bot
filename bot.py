@@ -350,33 +350,41 @@ async def admin_only_guard(update: Update) -> bool:
 async def qabullar_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await admin_only_guard(update):
         return
-    rows = get_all_rows("qabul_qilinganlar")
-    if not rows:
-        await update.message.reply_text("Hozircha qabul qilingan nomzodlar yo'q.")
-        return
-    file_path = os.path.join(os.path.dirname(__file__), "qabul_qilinganlar.xlsx")
-    build_excel_file(rows, "qabul_vaqti", file_path)
-    await update.message.reply_document(
-        document=open(file_path, "rb"),
-        filename="Qabul_qilinganlar.xlsx",
-        caption=f"✅ Qabul qilinganlar ro'yxati ({len(rows)} ta nomzod)",
-    )
+    try:
+        rows = get_all_rows("qabul_qilinganlar")
+        if not rows:
+            await update.message.reply_text("Hozircha qabul qilingan nomzodlar yo'q.")
+            return
+        file_path = os.path.join(os.path.dirname(__file__), "qabul_qilinganlar.xlsx")
+        build_excel_file(rows, "qabul_vaqti", file_path)
+        await update.message.reply_document(
+            document=open(file_path, "rb"),
+            filename="Qabul_qilinganlar.xlsx",
+            caption=f"✅ Qabul qilinganlar ro'yxati ({len(rows)} ta nomzod)",
+        )
+    except Exception as e:
+        logger.error("qabullar_command xatosi: %s", e)
+        await update.message.reply_text(f"⚠️ Xatolik yuz berdi: {e}")
 
 
 async def arxiv_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await admin_only_guard(update):
         return
-    rows = get_all_rows("arxivlanganlar")
-    if not rows:
-        await update.message.reply_text("Hozircha arxivlangan nomzodlar yo'q.")
-        return
-    file_path = os.path.join(os.path.dirname(__file__), "arxivlanganlar.xlsx")
-    build_excel_file(rows, "arxiv_vaqti", file_path)
-    await update.message.reply_document(
-        document=open(file_path, "rb"),
-        filename="Arxivlanganlar.xlsx",
-        caption=f"🗄 Arxivlangan nomzodlar ro'yxati ({len(rows)} ta nomzod)",
-    )
+    try:
+        rows = get_all_rows("arxivlanganlar")
+        if not rows:
+            await update.message.reply_text("Hozircha arxivlangan nomzodlar yo'q.")
+            return
+        file_path = os.path.join(os.path.dirname(__file__), "arxivlanganlar.xlsx")
+        build_excel_file(rows, "arxiv_vaqti", file_path)
+        await update.message.reply_document(
+            document=open(file_path, "rb"),
+            filename="Arxivlanganlar.xlsx",
+            caption=f"🗄 Arxivlangan nomzodlar ro'yxati ({len(rows)} ta nomzod)",
+        )
+    except Exception as e:
+        logger.error("arxiv_command xatosi: %s", e)
+        await update.message.reply_text(f"⚠️ Xatolik yuz berdi: {e}")
 
 
 # ----------------------------------------------------------------------------
@@ -740,7 +748,11 @@ def main():
                 CommandHandler("restart", restart),
             ],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[
+            CommandHandler("cancel", cancel),
+            CommandHandler("qabullar", qabullar_command),
+            CommandHandler("arxiv", arxiv_command),
+        ],
     )
 
     application.add_handler(conv_handler)
