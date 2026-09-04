@@ -1,7 +1,10 @@
+
 import logging
 import os
 import sqlite3
 from datetime import datetime
+
+from openpyxl import Workbook
 
 from telegram import (
     Update,
@@ -288,6 +291,92 @@ def get_application(app_id: int):
     row = cur.fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+def get_all_rows(table_name: str):
+    """Berilgan jadvaldan barcha qatorlarni ro'yxat (dict) shaklida qaytaradi."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(f"SELECT * FROM {table_name} ORDER BY id")
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def build_excel_file(rows: list, time_column: str, file_path: str):
+    """Berilgan qatorlar asosida Excel (.xlsx) fayl yaratadi."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Anketalar"
+
+    headers = [
+        "ID", "Ism", "Familiya", "Yosh", "Telefon", "Filial",
+        "Lavozim", "Tajriba", "Ariza sanasi", "Holat sanasi", "Telegram username",
+    ]
+    ws.append(headers)
+
+    for row in rows:
+        ws.append([
+            row.get("original_id") or row.get("id"),
+            row.get("ism"),
+            row.get("familiya"),
+            row.get("yosh"),
+            row.get("telefon"),
+            row.get("filial"),
+            row.get("lavozim"),
+            row.get("tajriba"),
+            row.get("created_at"),
+            row.get(time_column),
+            f"@{row.get('username')}" if row.get("username") else "—",
+        ])
+
+    # Ustunlar kengligini avtomatik moslashtirish
+    for col_cells in ws.columns:
+        max_len = max((len(str(c.value)) for c in col_cells if c.value is not None), default=10)
+        ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 2, 40)
+
+    wb.save(file_path)
+
+
+async def admin_only_guard(update: Update) -> bool:
+    """Buyruq faqat ADMIN_CHAT_ID'dan kelayotganini tekshiradi."""
+    if update.effective_chat.id != ADMIN_CHAT_ID:
+        await update.message.reply_text("Bu buyruq faqat admin uchun mavjud.")
+        return False
+    return True
+
+
+async def qabullar_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await admin_only_guard(update):
+        return
+    rows = get_all_rows("qabul_qilinganlar")
+    if not rows:
+        await update.message.reply_text("Hozircha qabul qilingan nomzodlar yo'q.")
+        return
+    file_path = os.path.join(os.path.dirname(__file__), "qabul_qilinganlar.xlsx")
+    build_excel_file(rows, "qabul_vaqti", file_path)
+    await update.message.reply_document(
+        document=open(file_path, "rb"),
+        filename="Qabul_qilinganlar.xlsx",
+        caption=f"✅ Qabul qilinganlar ro'yxati ({len(rows)} ta nomzod)",
+    )
+
+
+async def arxiv_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await admin_only_guard(update):
+        return
+    rows = get_all_rows("arxivlanganlar")
+    if not rows:
+        await update.message.reply_text("Hozircha arxivlangan nomzodlar yo'q.")
+        return
+    file_path = os.path.join(os.path.dirname(__file__), "arxivlanganlar.xlsx")
+    build_excel_file(rows, "arxiv_vaqti", file_path)
+    await update.message.reply_document(
+        document=open(file_path, "rb"),
+        filename="Arxivlanganlar.xlsx",
+        caption=f"🗄 Arxivlangan nomzodlar ro'yxati ({len(rows)} ta nomzod)",
+    )
 
 
 # ----------------------------------------------------------------------------
@@ -656,6 +745,8 @@ def main():
 
     application.add_handler(conv_handler)
     application.add_handler(CallbackQueryHandler(handle_admin_decision))
+    application.add_handler(CommandHandler("qabullar", qabullar_command))
+    application.add_handler(CommandHandler("arxiv", arxiv_command))
     application.add_handler(MessageHandler(filters.COMMAND, unknown))
 
     logger.info("Bot ishga tushdi...")
